@@ -14,6 +14,8 @@ public class Monitor.ProcessInfoIOStats : Gtk.Grid {
         row_spacing = 6;
         column_homogeneous = true;
         row_homogeneous = false;
+        width_request = 270;
+        vexpand = true;
 
         var opened_files_label = create_label (_("Opened files"));
         opened_files_label.get_style_context ().add_class (Granite.STYLE_CLASS_H4_LABEL);
@@ -49,10 +51,10 @@ public class Monitor.ProcessInfoIOStats : Gtk.Grid {
         // attach (opened_files_label, 0, 3, 3, 1);
 
         var model = new OpenFilesTreeViewModel ();
-        var open_files_tree_view_scrolled = new Gtk.ScrolledWindow (null, null);
+        var open_files_tree_view_scrolled = new Gtk.ScrolledWindow ();
         open_files_tree_view = new OpenFilesTreeView (model);
-        open_files_tree_view_scrolled.add (open_files_tree_view);
-        attach (open_files_tree_view_scrolled, 0, 4, 3, 1);
+        open_files_tree_view_scrolled.set_child (open_files_tree_view);
+        //  attach (open_files_tree_view_scrolled, 0, 4, 3, 1);
     }
 
     public void update (Process process) {

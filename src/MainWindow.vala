@@ -1,11 +1,8 @@
-public class Monitor.MainWindow : Hdy.ApplicationWindow {
+public class Monitor.MainWindow : Gtk.ApplicationWindow {
     // application reference
     private Shortcuts shortcuts;
 
     private Resources resources;
-
-    // Widgets
-    public Headerbar headerbar;
 
     public ProcessView process_view;
     public SystemView system_view;
@@ -19,7 +16,10 @@ public class Monitor.MainWindow : Hdy.ApplicationWindow {
 
     // Constructs a main window
     public MainWindow (MonitorApp app) {
-        Hdy.init ();
+        Granite.init ();
+
+        //  Adw.init ();
+
         this.set_application (app);
 
         setup_window_state ();
@@ -43,16 +43,12 @@ public class Monitor.MainWindow : Hdy.ApplicationWindow {
             stack.add_titled (container_view, "container_view", _("Containers"));
         }
 
-
         Gtk.StackSwitcher stack_switcher = new Gtk.StackSwitcher ();
         stack_switcher.valign = Gtk.Align.CENTER;
         stack_switcher.set_stack (stack);
 
-        headerbar = new Headerbar (this);
-        headerbar.set_custom_title (stack_switcher);
-        var sv = new PreferencesView ();
-        headerbar.preferences_grid.add (sv);
-        sv.show_all ();
+        var headerbar = this.build_headerbar (stack_switcher);
+        set_titlebar (headerbar);
 
         statusbar = new Statusbar ();
 
@@ -60,26 +56,19 @@ public class Monitor.MainWindow : Hdy.ApplicationWindow {
             orientation = Gtk.Orientation.VERTICAL
         };
 
-        grid.add (headerbar);
-        grid.add (stack);
-        grid.add (statusbar);
+        grid.attach (stack, 0, 1, 1, 1);
+        grid.attach (statusbar, 0, 2, 1, 1);
 
-        add (grid);
+        set_child (grid);
 
-        show_all ();
+        present ();
 
         dbusserver = DBusServer.get_default ();
 
-        headerbar.search_revealer.set_reveal_child (stack.visible_child_name == "process_view");
-        stack.notify["visible-child-name"].connect (() => {
-            headerbar.search_revealer.set_reveal_child (stack.visible_child_name == "process_view");
-        });
 
         new Thread<void> ("upd", () => {
             Timeout.add_seconds (MonitorApp.settings.get_int ("update-time"), () => {
-                process_view.update ();
-
-
+                //  process_view.update ();
                 container_view.update ();
 
 
@@ -98,39 +87,82 @@ public class Monitor.MainWindow : Hdy.ApplicationWindow {
 
         dbusserver.quit.connect (() => app.quit ());
         dbusserver.show.connect (() => {
-            this.deiconify ();
             this.present ();
             setup_window_state ();
-            this.show_all ();
+            this.present ();
         });
 
         shortcuts = new Shortcuts (this);
-        key_press_event.connect ((e) => shortcuts.handle (e));
+        //  key_press_event.connect ((e) => shortcuts.handle (e));
 
-        this.delete_event.connect (() => {
-            int window_width, window_height, position_x, position_y;
-            get_size (out window_width, out window_height);
-            get_position (out position_x, out position_y);
+        app.window_removed.connect (() => {
+            int position_x, position_y;
+            int window_width = get_size (Gtk.Orientation.HORIZONTAL);
+            int window_height = get_size (Gtk.Orientation.VERTICAL);
+            //  get_position (out position_x, out position_y);
             MonitorApp.settings.set_int ("window-width", window_width);
             MonitorApp.settings.set_int ("window-height", window_height);
-            MonitorApp.settings.set_int ("position-x", position_x);
-            MonitorApp.settings.set_int ("position-y", position_y);
-            MonitorApp.settings.set_boolean ("is-maximized", this.is_maximized);
+            //  MonitorApp.settings.set_int ("position-x", position_x);
+            //  MonitorApp.settings.set_int ("position-y", position_y);
+            //  MonitorApp.settings.set_boolean ("is-maximized", this.is_maximized);
 
             MonitorApp.settings.set_string ("opened-view", stack.visible_child_name);
 
             if (MonitorApp.settings.get_boolean ("indicator-state")) {
-                this.hide_on_delete ();
+                // Read: https://discourse.gnome.org/t/how-to-hide-widget-instead-removing-them-in-gtk-4/8176
+                this.hide ();
+
             } else {
                 dbusserver.indicator_state (false);
                 app.quit ();
             }
 
-            return true;
+            //  return true;
         });
 
         dbusserver.indicator_state (MonitorApp.settings.get_boolean ("indicator-state"));
         stack.visible_child_name = MonitorApp.settings.get_string ("opened-view");
+    }
+
+    private Adw.HeaderBar build_headerbar (Gtk.Widget widget) {
+        // The headerbar
+        var headerbar = new Adw.HeaderBar ();
+        headerbar.set_title_widget (widget);
+
+        // Preferences button
+        var preferences_button = new Gtk.MenuButton ();
+        preferences_button.has_tooltip = true;
+        preferences_button.tooltip_text = (_("Settings"));
+        preferences_button.set_icon_name ("open-menu");
+        headerbar.pack_end (preferences_button);
+
+        var preferences_grid = new Gtk.Grid () {
+            orientation = Gtk.Orientation.VERTICAL
+        };
+
+        var preferences_popover = new Gtk.Popover ();
+        preferences_popover.set_child (preferences_grid);
+        preferences_button.popover = preferences_popover;
+
+        preferences_grid.attach (new PreferencesView (), 0, 0, 1, 1);
+
+        // Search entry
+        var search = new Search (process_view.process_tree_view) {
+            valign = Gtk.Align.CENTER,
+        };
+
+        Gtk.Revealer search_revealer = new Gtk.Revealer () {
+            transition_type = Gtk.RevealerTransitionType.SLIDE_LEFT,
+        };
+        search_revealer.set_child (search);
+        headerbar.pack_start (search_revealer);
+
+        search_revealer.set_reveal_child (stack.visible_child_name == "process_view");
+        stack.notify["visible-child-name"].connect (() => {
+            search_revealer.set_reveal_child (stack.visible_child_name == "process_view");
+        });
+
+        return headerbar;
     }
 
     private void setup_window_state () {
@@ -144,12 +176,16 @@ public class Monitor.MainWindow : Hdy.ApplicationWindow {
 
         int position_x = MonitorApp.settings.get_int ("position-x");
         int position_y = MonitorApp.settings.get_int ("position-y");
-        if (position_x == -1 || position_y == -1) {
-            // -1 is default value of these keys, which means this is the first launch
-            this.window_position = Gtk.WindowPosition.CENTER;
-        } else {
-            move (position_x, position_y);
-        }
+
+        // Can't move window to a specific position in GTK4
+        // Read: https://discourse.gnome.org/t/how-to-center-gtkwindows-in-gtk4/3112
+
+        //  if (position_x == -1 || position_y == -1) {
+        //      // -1 is default value of these keys, which means this is the first launch
+        //      this.window_position = Gtk.WindowPosition.CENTER;
+        //  } else {
+        //      move (position_x, position_y);
+        //  }
     }
 
 }

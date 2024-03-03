@@ -2,12 +2,15 @@ public class Monitor.SystemNetworkView : Gtk.Grid {
     private Chart network_chart;
     private Network network;
 
-    private LabelH4 network_name_label;
+    private Gtk.Label network_name_label;
     private LabelRoundy network_upload_label;
     private LabelRoundy network_download_label;
 
     construct {
-        margin = 12;
+        margin_start = 12;
+        margin_end = 12;
+        margin_top = 12;
+        margin_bottom = 12;
         column_spacing = 12;
         set_vexpand (false);
     }
@@ -15,7 +18,13 @@ public class Monitor.SystemNetworkView : Gtk.Grid {
     public SystemNetworkView (Network _network) {
         network = _network;
 
-        network_name_label = new LabelH4 (_("Network"));
+        network_name_label = new Gtk.Label (_("Network")) {
+            valign = Gtk.Align.START,
+            halign = Gtk.Align.START,
+            margin_start = 6,
+            ellipsize = Pango.EllipsizeMode.END,
+        };
+        network_name_label.add_css_class ("h4");
 
         network_download_label = new LabelRoundy (_("DOWN"));
         network_download_label.val.set_width_chars (7);
@@ -28,13 +37,18 @@ public class Monitor.SystemNetworkView : Gtk.Grid {
         network_chart = new Chart (2);
         network_chart.config.y_axis.fixed_max = null;
 
-        network_chart.set_serie_color (0, { 155 / 255.0, 219 / 255.0, 77 / 255.0, 1.0 });
-        network_chart.set_serie_color (1, { 100 / 255.0, 186 / 255.0, 255 / 255.0, 1.0 });
+        network_chart.set_serie_color (0, { 155 / 255.0f, 219 / 255.0f, 77 / 255.0f, 1.0f });
+        network_chart.set_serie_color (1, { 100 / 255.0f, 186 / 255.0f, 255 / 255.0f, 1.0f });
 
-        var labels_grid = new Gtk.Grid ();
-        labels_grid.row_spacing = 6;
-        labels_grid.column_spacing = 6;
-        labels_grid.margin = 6;
+        var labels_grid = new Gtk.Grid () {
+            row_spacing = 6,
+            column_spacing = 6,
+            margin_start = 6,
+            margin_end = 6,
+            margin_top = 6,
+            margin_bottom = 6,
+        };
+
         labels_grid.attach (network_download_label, 0, 0, 1, 1);
         labels_grid.attach (network_upload_label, 1, 0, 1, 1);
 

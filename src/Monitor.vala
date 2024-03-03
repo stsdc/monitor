@@ -29,7 +29,6 @@ namespace Monitor {
         public override void activate () {
             // only have one window
             if (get_windows () != null) {
-                window.show_all ();
                 window.present ();
                 return;
             }
@@ -60,7 +59,7 @@ namespace Monitor {
                 window.hide ();
                 MonitorApp.settings.set_boolean ("background-state", true);
             } else {
-                window.show_all ();
+                window.present ();
             }
 
             window.process_view.process_tree_view.focus_on_first_row ();

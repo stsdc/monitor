@@ -34,12 +34,12 @@ source_app_files = [
     'Views/ProcessView/ProcessInfoView/OpenFilesTreeView.vala',
 
     # Widgets
-    'Widgets/Headerbar/Headerbar.vala',
+    # 'Widgets/Headerbar/Headerbar.vala',
     'Widgets/Headerbar/Search.vala',
     'Widgets/Statusbar/Statusbar.vala',
     'Widgets/Labels/LabelVertical.vala',
     'Widgets/Labels/LabelRoundy.vala',
-    'Widgets/Labels/LabelH4.vala',
+    # 'Widgets/Labels/LabelH4.vala',
     'Widgets/Chart/Chart.vala',
     'Widgets/WidgetResource/WidgetResource.vala',
 
