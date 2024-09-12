@@ -56,7 +56,6 @@ public class Monitor.Process : GLib.Object {
     private uint64 cpu_last_used;
 
     // Memory usage of the process, measured in KiB.
-
     public uint64 mem_usage { get; private set; }
     public double mem_percentage { get; private set; }
 
@@ -81,13 +80,11 @@ public class Monitor.Process : GLib.Object {
         stat.pid = _pid;
 
         // getting uid
-        GTop.ProcUid proc_uid;
-        GTop.get_proc_uid (out proc_uid, stat.pid);
-        uid = proc_uid.uid;
-
+        uid = get_uid ();
 
         // getting username
-        // @TOFIX: Can't get username for postgres when started from docker (?)
+        // @TOFIX: Can't get username for postgres which
+        // is started from docker (?)
         unowned Posix.Passwd passwd = Posix.getpwuid (uid);
         if (passwd != null) {
             username = passwd.pw_name;
@@ -98,6 +95,23 @@ public class Monitor.Process : GLib.Object {
         get_usage (0, 1);
     }
 
+    private int get_uid () {
+        if (ProcessUtils.is_flatpak_env ()) {
+            var process_provider = ProcessProvider.get_default ();
+            string ? status = process_provider.pids_status.get (this.stat.pid);
+            var status_line = status.split ("\n");
+
+            int uid = int.parse (status_line[8].split ("\t")[1]);
+
+            // @TODO parse users file instead
+            if (uid == 0) username = "root";
+            return uid;
+
+        }
+        GTop.ProcUid proc_uid;
+        GTop.get_proc_uid (out proc_uid, stat.pid);
+        return proc_uid.uid;
+    }
 
     // Updates the process to get latest information
     // Returns if the update was successful
@@ -114,6 +128,15 @@ public class Monitor.Process : GLib.Object {
 
     // Kills the process
     public bool kill () {
+        if (ProcessUtils.is_flatpak_env ()) {
+            try {
+                DBusWorkaroundClient.get_default ().interface.kill_process (this.stat.pid);
+                return true;
+            } catch (Error e) {
+                warning (e.message);
+            }
+        }
+
         // Sends a kill signal that cannot be ignored
         if (Posix.kill (stat.pid, Posix.Signal.KILL) == 0) {
             return true;
@@ -123,6 +146,15 @@ public class Monitor.Process : GLib.Object {
 
     // Ends the process
     public bool end () {
+        if (ProcessUtils.is_flatpak_env ()) {
+            try {
+                DBusWorkaroundClient.get_default ().interface.end_process (this.stat.pid);
+                return true;
+            } catch (Error e) {
+                warning (e.message);
+            }
+        }
+
         // Sends a terminate signal
         if (Posix.kill (stat.pid, Posix.Signal.TERM) == 0) {
             return true;
@@ -143,7 +175,52 @@ public class Monitor.Process : GLib.Object {
         return true;
     }
 
+    private bool parse_io_workaround () {
+        var process_provider = ProcessProvider.get_default ();
+        string ? io_stats = process_provider.pids_io.get (this.stat.pid);
+
+        if (io_stats == "") return false;
+
+        foreach (string line in io_stats.split ("\n")) {
+            if (line == "") continue;
+            var splitted_line = line.split (":");
+            switch (splitted_line[0]) {
+            case "wchar":
+                io.wchar = uint64.parse (splitted_line[1]);
+                break;
+            case "rchar":
+                io.rchar = uint64.parse (splitted_line[1]);
+                break;
+            case "syscr":
+                io.syscr = uint64.parse (splitted_line[1]);
+                break;
+            case "syscw":
+                io.syscw = uint64.parse (splitted_line[1]);
+                break;
+            case "read_bytes":
+                io.read_bytes = uint64.parse (splitted_line[1]);
+                break;
+            case "write_bytes":
+                io.write_bytes = uint64.parse (splitted_line[1]);
+                break;
+            case "cancelled_write_bytes":
+                io.cancelled_write_bytes = uint64.parse (splitted_line[1]);
+                break;
+            default:
+                warning ("Unknown value in /proc/%d/io", stat.pid);
+                break;
+            }
+        }
+
+        return true;
+    }
+
     private bool parse_io () {
+
+        if (ProcessUtils.is_flatpak_env ()) {
+            return parse_io_workaround ();
+        }
+
         var io_file = File.new_for_path ("/proc/%d/io".printf (stat.pid));
 
         if (!io_file.query_exists ()) {
@@ -197,11 +274,17 @@ public class Monitor.Process : GLib.Object {
 
     // Reads the /proc/%pid%/stat file and updates the process with the information therein.
     private bool parse_stat () {
-        string ? stat_contents = ProcessUtils.read_file ("/proc/%d/stat".printf (stat.pid));
-
-        if (stat_contents == null) {
-            return false;
+        string ? stat_contents;
+        if (ProcessUtils.is_flatpak_env ()) {
+            var process_provider = ProcessProvider.get_default ();
+            stat_contents = process_provider.pids_stat.get (this.stat.pid);
+        } else {
+            stat_contents = ProcessUtils.read_file ("/proc/%d/stat".printf (stat.pid));
         }
+
+        if (stat_contents == null) return false;
+
+        // debug (stat_contents);
 
         // Split the contents into an array and parse each value that we care about
 
@@ -229,12 +312,21 @@ public class Monitor.Process : GLib.Object {
         stat.priority = int.parse (splitted_stat[17]);
         stat.nice = int.parse (splitted_stat[18]);
         stat.num_threads = int.parse (splitted_stat[19]);
+        stat.utime = ulong.parse (splitted_stat[13]);
+        stat.stime = ulong.parse (splitted_stat[14]);
+        stat.rss = long.parse (splitted_stat[23]);
 
         return true;
     }
 
     private bool parse_statm () {
-        string ? statm_contents = ProcessUtils.read_file ("/proc/%d/statm".printf (stat.pid));
+        string ? statm_contents;
+        if (ProcessUtils.is_flatpak_env ()) {
+            var process_provider = ProcessProvider.get_default ();
+            statm_contents = process_provider.pids_statm.get (this.stat.pid);
+        } else {
+            statm_contents = ProcessUtils.read_file ("/proc/%d/statm".printf (stat.pid));
+        }
 
         if (statm_contents == null) return false;
 
@@ -251,26 +343,26 @@ public class Monitor.Process : GLib.Object {
     }
 
     private bool get_open_files () {
-        try {
-            string directory = "/proc/%d/fd".printf (stat.pid);
-            Dir dir = Dir.open (directory, 0);
-            string ? name = null;
-            while ((name = dir.read_name ()) != null) {
-                string path = Path.build_filename (directory, name);
+        // try {
+        // string directory = "/proc/%d/fd".printf (stat.pid);
+        // Dir dir = Dir.open (directory, 0);
+        // string ? name = null;
+        // while ((name = dir.read_name ()) != null) {
+        // string path = Path.build_filename (directory, name);
 
-                if (FileUtils.test (path, FileTest.IS_SYMLINK)) {
-                    string real_path = FileUtils.read_link (path);
-                    // debug(content);
-                    open_files_paths.add (real_path);
-                }
-            }
-        } catch (FileError err) {
-            if (err is FileError.ACCES) {
-                fd_permission_error (err.message);
-            } else {
-                warning (err.message);
-            }
-        }
+        // if (FileUtils.test (path, FileTest.IS_SYMLINK)) {
+        // string real_path = FileUtils.read_link (path);
+        //// debug(content);
+        // open_files_paths.add (real_path);
+        // }
+        // }
+        // } catch (FileError err) {
+        // if (err is FileError.ACCES) {
+        // fd_permission_error (err.message);
+        // } else {
+        // warning (err.message);
+        // }
+        // }
         return true;
     }
 
@@ -278,7 +370,13 @@ public class Monitor.Process : GLib.Object {
      * Reads the /proc/%pid%/cmdline file and updates from the information contained therein.
      */
     private bool read_cmdline () {
-        string ? cmdline = ProcessUtils.read_file ("/proc/%d/cmdline".printf (stat.pid));
+        string ? cmdline;
+        if (ProcessUtils.is_flatpak_env ()) {
+            var process_provider = ProcessProvider.get_default ();
+            cmdline = process_provider.pids_cmdline.get (this.stat.pid);
+        } else {
+            cmdline = ProcessUtils.read_file ("/proc/%d/cmdline".printf (stat.pid));
+        }
 
         if (cmdline == null) {
             return false;
@@ -288,20 +386,26 @@ public class Monitor.Process : GLib.Object {
             // if cmdline has 0 length we look into stat file
             // useful for kworker processes
             command = stat.comm;
-
             return true;
         }
 
         command = cmdline;
+
         return true;
     }
 
     private void get_usage (uint64 cpu_total, uint64 cpu_last_total) {
         // Get CPU usage by process
-        GTop.ProcTime proc_time;
-        GTop.get_proc_time (out proc_time, stat.pid);
-        cpu_percentage = 100 * ((double) (proc_time.rtime - cpu_last_used)) / (cpu_total - cpu_last_total);
-        cpu_last_used = proc_time.rtime;
+        if (ProcessUtils.is_flatpak_env ()) {
+            var rtime = stat.utime + stat.stime;
+            cpu_percentage = 100 * ((double) (rtime - cpu_last_used)) / (cpu_total - cpu_last_total);
+            cpu_last_used = rtime;
+        } else {
+            GTop.ProcTime proc_time;
+            GTop.get_proc_time (out proc_time, stat.pid);
+            cpu_percentage = 100 * ((double) (proc_time.rtime - cpu_last_used)) / (cpu_total - cpu_last_total);
+            cpu_last_used = proc_time.rtime;
+        }
 
         // Making CPU history
         if (cpu_percentage_history.size == HISTORY_BUFFER_SIZE) {
@@ -313,9 +417,14 @@ public class Monitor.Process : GLib.Object {
         GTop.Memory mem;
         GTop.get_mem (out mem);
 
-        GTop.ProcMem proc_mem;
-        GTop.get_proc_mem (out proc_mem, stat.pid);
-        mem_usage = (proc_mem.resident - proc_mem.share) / 1024; // in KiB
+        if (ProcessUtils.is_flatpak_env ()) {
+            mem_usage = (stat.rss * 4096 - statm.shared) / 1024;
+        } else {
+            GTop.ProcMem proc_mem;
+            GTop.get_proc_mem (out proc_mem, stat.pid);
+            mem_usage = (proc_mem.resident - proc_mem.share) / 1024; // in KiB
+        }
+
 
         // also if it is using X Window Server
         if (Gdk.Display.get_default () is Gdk.X11.Display) {

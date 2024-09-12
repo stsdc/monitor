@@ -97,7 +97,7 @@ namespace Monitor {
         /**
          * Gets all new process and adds them
          */
-        public async void update_processes () {
+         public async void update_processes () {
             /* CPU */
             GTop.Cpu cpu_data;
             GTop.get_cpu (out cpu_data);
@@ -130,14 +130,10 @@ namespace Monitor {
                 remove_process (pid);
             }
 
-            var uid = Posix.getuid ();
-            GTop.ProcList proclist;
-            // var pids = GTop.get_proclist (out proclist, GTop.GLIBTOP_KERN_PROC_UID, uid);
-            var pids = GTop.get_proclist (out proclist, GTop.GLIBTOP_KERN_PROC_ALL, uid);
+            var process_provider = ProcessProvider.get_default ();
+            var pids = process_provider.get_pids ();
 
-            for (int i = 0; i < proclist.number; i++) {
-                int pid = pids[i];
-
+            foreach (int pid in pids) {
                 if (!process_list.has_key (pid) && !kernel_process_blacklist.contains (pid)) {
                     add_process (pid);
                 }
@@ -225,7 +221,7 @@ namespace Monitor {
                     return true;
                 }
                 // some processes have semicolon in command
-                // do not sanitizing to improve readability
+                // do not sanitize to improve readability
                 else if (process.command.split (" ")[0].contains (":")) {
                     process.application_name = process.command;
                     return true;

@@ -15,18 +15,26 @@ public class Monitor.ProcessUtils {
         var splitted_commandline = commandline.split (" ");
 
         // check if started by any shell
-        if (is_shell (splitted_commandline[0]) || is_python (splitted_commandline[0]) ) {
+        if (is_shell (splitted_commandline[0]) || is_python (splitted_commandline[0])) {
             return commandline;
         }
 
-        //  if (!splitted_commandline[0].contains ("/")) {
-        //      return commandline;
-        //  }
+        // if (!splitted_commandline[0].contains ("/")) {
+        // return commandline;
+        // }
 
         return splitted_commandline[0];
     }
 
     public static string ? read_file (string path) {
+        // if (ProcessUtils.is_flatpak_env ()) {
+        // return ProcessUtils.read_file_on_host (path);
+        // }
+
+        return ProcessUtils.read_file_native (path);
+    }
+
+    public static string ? read_file_native (string path) {
         var file = File.new_for_path (path);
 
         /* make sure that it exists, not an error if it doesn't */
@@ -54,6 +62,54 @@ public class Monitor.ProcessUtils {
         }
     }
 
+    public static string ? read_file_on_host (string path) {
+        string stdout;
+        string stderr;
+        string stdin;
+        int status;
+
+        int standard_input;
+        int standard_output;
+        int standard_error;
+
+
+        string command = "flatpak-spawn --host cat " + path;
+        string[] spawn_args = { "flatpak-spawn", "--host", "env", "LANG=C", "cat", path };
+        Pid child_pid;
+
+        try {
+            // string command = "flatpak-spawn --host cat " + path + " | grep -av DEBUG";
+            debug (command);
+            GLib.Process.spawn_command_line_sync
+            (
+                command,
+                out stdout,
+                out stderr,
+                out status
+            );
+
+        } catch (SpawnError e) {
+            error (e.message);
+        }
+
+
+        string ? stdout_no_debug = "";
+
+        if (stdout == "" || status != 0) {
+            warning ("Tried to execute %s, but got null. Status: %d", command, status);
+            return null;
+        }
+
+        foreach (var line in stdout.split ("\n")) {
+            if (!line.contains ("DEBUG")) {
+                stdout_no_debug += line + "\n";
+            }
+        }
+        // print (stdout_no_debug);
+        // return null;
+        return stdout_no_debug;
+    }
+
     public static Icon ? get_default_icon () {
         try {
             return Icon.new_for_string ("application-x-executable");
@@ -62,4 +118,24 @@ public class Monitor.ProcessUtils {
             return null;
         }
     }
+
+    public static bool is_flatpak_env () {
+        string environment = GLib.Environment.get_variable ("container");
+        // debug ("Monitor is running in %s environment", environment);
+        if (environment == "flatpak") {
+            return true;
+        }
+        return false;
+    }
+
+    public static string get_flatpak_app_path () {
+        string ? flatpak_info_content = ProcessUtils.read_file ("/.flatpak-info");
+        foreach (var line in flatpak_info_content.split ("\n")) {
+            if (line.contains ("app-path")) {
+                return line.replace ("app-path=", "");
+            }
+        }
+        return "";
+    }
+
 }

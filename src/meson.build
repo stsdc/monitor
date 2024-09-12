@@ -57,10 +57,14 @@ source_app_files = [
     'Managers/HttpClientAsync.vala',
     'Managers/ContainerManager.vala',
     'Managers/Container.vala',
+    'Managers/ProcessProvider.vala',
+    # 'Managers/ProcessWorkaround.vala',
+    # 'Managers/IProcess.vala',
 
     # Services
     'Services/Shortcuts.vala',
     'Services/DBusServer.vala',
+    'Services/DBusWorkaroundClient.vala',
     'Services/Appearance.vala',
 
     # Resources

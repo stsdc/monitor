@@ -78,8 +78,16 @@ Check dependencies in [the deb control file](debian/control).
    sudo ninja install
    ```
 
+#### Build Flatpak
+
+    flatpak-builder build  com.github.stsdc.monitor.yml --user --install --force-clean
+
 ### Debug logging
 
 ```bash
 G_MESSAGES_DEBUG=all GTK_DEBUG=interactive com.github.stsdc.monitor
 ```
+
+#### Debug Flatpak
+
+    flatpak run --command=sh  --devel  com.github.stsdc.monitor
